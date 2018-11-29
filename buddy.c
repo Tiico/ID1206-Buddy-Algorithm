@@ -4,7 +4,9 @@
 #include <assert.h>
 #include <strings.h>
 #include <time.h>
+#include <unistd.h>
 #include <math.h>
+
 
 #define MIN 5
 #define LEVELS 8
@@ -181,9 +183,9 @@ void insert(struct head * block) {
       add(block);
     }
     else {
-      munmap(block, 4096);
-      allocatedPages--;
-    }
+        munmap(block, 4096);
+        allocatedPages--;
+      }
   }
   else {
     struct head *bud = buddy(block);
@@ -244,7 +246,7 @@ void print_flists() {
   printf("\n");
 }
 
-double* benchmark(int blockSize, int iterations){
+void seqBenchmark(int blockSize, int iterations){
   printf("============BENCHMARK SIZE: %d============\n", blockSize);
 
   clock_t start_balloc, end_balloc, start_bfree, end_bfree, start_malloc, end_malloc, start_free, end_free;
@@ -279,29 +281,104 @@ double* benchmark(int blockSize, int iterations){
   double mallocTime = ((double)(end_malloc - start_malloc))/ CLOCKS_PER_SEC;
   double freeTime = ((double)(end_free - start_free))/ CLOCKS_PER_SEC;
 
-  double average_ballocTime = ballocTime/iterations*1000;
-  double average_bfreeTime = bfreeTime/iterations*1000;
-  double average_mallocTime = mallocTime/iterations*1000;
-  double average_freeTime = freeTime/iterations*1000;
+  double average_ballocTime = ballocTime/iterations*1000000000;
+  double average_bfreeTime = bfreeTime/iterations*1000000000;
+  double average_mallocTime = mallocTime/iterations*1000000000;
+  double average_freeTime = freeTime/iterations*1000000000;
 
 
 
   // printf("Time required for %d Ballocs: %f ms, of size: %d\n", iterations, ballocTime, blockSize);
   // printf("Time required for %d Bfree: %f ms, of size: %d\n", iterations, bfreeTime, blockSize);
 
-  printf("Balloc: Time required when running %d iterations, Average: %.10f ms, Single: %f ms, of size: %d\n", iterations,  average_ballocTime, ballocTime*1000, blockSize);
-  printf("Bfree:  Time required when running %d iterations, Average: %.10f ms, Single: %f ms, of size: %d\n", iterations,  average_bfreeTime, bfreeTime*1000, blockSize);
-  printf("Malloc: Time required when running %d iterations, Average: %.10f ms, Single: %f ms, of size: %d\n", iterations,  average_mallocTime, mallocTime*1000, blockSize);
-  printf("Free:   Time required when running %d iterations, Average: %.10f ms, Single: %f ms, of size: %d\n", iterations,  average_freeTime, freeTime*1000, blockSize);
+  printf("Balloc: Time required when running %d iterations, Average: %.10f ns, Full time: %f ms, of size: %d\n", iterations,  average_ballocTime, ballocTime*1000, blockSize);
+  printf("Bfree:  Time required when running %d iterations, Average: %.10f ns, Full time: %f ms, of size: %d\n", iterations,  average_bfreeTime, bfreeTime*1000, blockSize);
+  printf("Malloc: Time required when running %d iterations, Average: %.10f ns, Full time: %f ms, of size: %d\n", iterations,  average_mallocTime, mallocTime*1000, blockSize);
+  printf("Free:   Time required when running %d iterations, Average: %.10f ns, Full time: %f ms, of size: %d\n", iterations,  average_freeTime, freeTime*1000, blockSize);
 
   printf("\n");
 }
 
-void test() {
-  for (int i = 32; i <= 4096; i = i*2) {
-    benchmark(i, 10000);
-  }
+int getSize(int level) {
+    int size = pow(2, 5 + level);
+    return size;
+}
+int getMemorySize(void* memory){
+  struct head* block = magic(memory);
+  switch (block->level) {
+    case 0:
+      return 32;
+    case 1:
+      return 64;
+    case 2:
+      return 128;
+    case 3:
+      return 256;
+    case 4:
+      return 512;
+    case 5:
+      return 1024;
+    case 6:
+      return 2048;
+    case 7:
+      return 4096;
 
+  }
+}
+
+void randBenchmark(int max_size, int blockRequests){
+    srand(time(NULL));
+    void *current;
+    int rounds = 100;
+    int loop = 100;
+
+    int lvl = level(max_size);
+    int randomlvl = 0;
+    void* buffer[blockRequests];
+    int totalusedalloc = 0;
+    FILE *file = fopen("allo.dat", "w");
+    fprintf(file, "# Rounds: %d, Loops: %d, Buffer: %d\n", rounds, loop, blockRequests);
+    fprintf(file, "#Round\tPages amount\tUsed pages\tAlloc pages\tFree memory\n");
+
+    for (int i = 0; i < blockRequests; i++) {
+      buffer[i] = NULL;
+    }
+
+    for(int j = 0; j < rounds; j++){
+    for (int i = 0; i < loop; i++) {
+      randomlvl = rand() % (lvl+1);
+      int bufferrandom = rand() % blockRequests;
+      if (buffer[bufferrandom] != NULL) {
+        totalusedalloc -= getMemorySize(buffer[bufferrandom]);
+        bfree(buffer[bufferrandom]);
+      }
+      buffer[bufferrandom] = balloc((getSize(randomlvl))-24);
+      totalusedalloc += getMemorySize(buffer[bufferrandom]);
+    }
+
+
+    fprintf(file, "%d\t%d\t%d\t%d\t%d\n", j+1, allocatedPages, totalusedalloc/4096, (allocatedPages*4096)/1000, ((allocatedPages*4096)-totalusedalloc)/1000);
+    printf("Total memory used %d kB, Out of allocated: %d kB, Free memory(internal fragmentation): %d kB.\n", totalusedalloc/1000, (allocatedPages*4096)/1000, ((allocatedPages*4096)-totalusedalloc)/1000);
+  }
   //print_flists();
 
+
+
+
+}
+void test() {
+  // for (int i = 32; i <= 4096; i = i*2) {
+  //   seqBenchmark(i, 10000);
+  // }
+    randBenchmark(4000, 1000);
+
+    //print_flists();
+  // clock_t teststart, testend;
+  // teststart = clock();
+  // balloc(4000);
+  // testend = clock();
+  // double time = ((double)(testend - teststart))/CLOCKS_PER_SEC;
+  // printf("%.10f ms\n", time);
+
+  //print_flists();
 }
